@@ -1,4 +1,3 @@
-
 using Plots
 default(show=true)
 
@@ -24,7 +23,7 @@ ElevatorState(problem::ElevatorProblem) = ElevatorState(1, zeros(problem.number_
 function elevator_simulator(problem::ElevatorProblem, state::ElevatorState, action)
 	num_f, prob_obp = problem.number_of_floors, problem.outer_button_press_probability
 	f, ib, uob, dob = state.current_floor, state.inner_buttons, state.up_outer_buttons, state.down_outer_buttons
-	r = 0
+	r = 0.0
 
 	#Move up, down or stay!
 	f = f + action
@@ -180,7 +179,7 @@ function plot_elevator_state(problem::ElevatorProblem, state::ElevatorState, des
 	annotate!(0, f, text(action_labels[a+2], :white, :middle, 10))
 end
 
-animate_this = true
+animate_this = false
 
 EP  = ElevatorProblem(5, 0.025)
 elv = ElevatorState(EP)
@@ -198,10 +197,19 @@ if animate_this
 	end 
 	gif(anim, "test.gif", fps=3)
 else
-	for ii in 1:100
+	for ii in 1:1000
 		global elv, r = elevator_simulator(EP, elv, a)
 		global a, d = shortest_distance_heuristic(EP, elv, d)
 		global tot_r += r
-		println(a+2, " ", elv, " ", r)
+		println("cycle: ", ii)
+		println("--------------------------")
+		println("action: ", a+2, "\nstate: ", elv, "\nreward: ", r)
+		println("--------------------------")
 	end
 end
+
+#ob = map(((u, d),) -> 1*((u == 1) || (d == 1)), collect(zip(uob,dob)))
+#any([fl for (fl, b) for zip(floors, ob) if b > 0].>f)
+#any([fl for (fl, b) for zip(floors, ob) if b > 0].<f)
+#any([fl for (fl, b) for zip(floors, ob) if b > 0]==f)
+
