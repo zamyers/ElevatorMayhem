@@ -209,7 +209,7 @@ function ob_abovebelow_project(problem::ElevatorProblem, state::ElevatorState)
 	return ApproxAboveBelowElevatorState(f, ib, above, below, at_current_floor)
 end
 
-function ob_abovebelow_project(problem::ElevatorProblem, state::ElevatorState)
+function ob_distance_project(problem::ElevatorProblem, state::ElevatorState)
 	num_f, prob_obp = problem.number_of_floors, problem.outer_button_press_probability
 	f, ib, uob, dob = state.current_floor, state.inner_buttons, state.up_outer_buttons, state.down_outer_buttons
 
