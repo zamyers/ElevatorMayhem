@@ -13,6 +13,22 @@ struct ElevatorState
 	down_outer_buttons
 end
 
+struct ApproxAboveBelowElevatorState
+	current_floor
+	inner_buttons
+	ob_pressed_above
+	ob_pressed_below
+	ob_at_current_floor
+end
+
+struct ApproxDistanceElevatorState
+	current_floor
+	inner_buttons
+	above_dist
+	below_dist
+	ob_at_current_floor
+end
+
 function circle(x, y, r)
 	phi = LinRange(0, 2*pi, 100)
 	return x .+ r*sin.(phi), y .+ r*cos.(phi)
@@ -179,6 +195,39 @@ function plot_elevator_state(problem::ElevatorProblem, state::ElevatorState, des
 	annotate!(0, f, text(action_labels[a+2], :white, :middle, 10))
 end
 
+function ob_abovebelow_project(problem::ElevatorProblem, state::ElevatorState)
+	num_f, prob_obp = problem.number_of_floors, problem.outer_button_press_probability
+	f, ib, uob, dob = state.current_floor, state.inner_buttons, state.up_outer_buttons, state.down_outer_buttons
+
+	floors = 1:num_f
+
+	ob = map(((u, d),) -> 1*((u == 1) || (d == 1)), collect(zip(uob,dob)))
+	above = any([fl for (fl, b) for zip(floors, ob) if b > 0].>f)
+	below = any([fl for (fl, b) for zip(floors, ob) if b > 0].<f)
+	at_current_floor = any([fl for (fl, b) for zip(floors, ob) if b > 0]==f)
+
+	return ApproxAboveBelowElevatorState(f, ib, above, below, at_current_floor)
+end
+
+function ob_abovebelow_project(problem::ElevatorProblem, state::ElevatorState)
+	num_f, prob_obp = problem.number_of_floors, problem.outer_button_press_probability
+	f, ib, uob, dob = state.current_floor, state.inner_buttons, state.up_outer_buttons, state.down_outer_buttons
+
+	floors = 1:num_f
+
+	ob = map(((u, d),) -> 1*((u == 1) || (d == 1)), collect(zip(uob,dob)))
+
+	viable_floors_above = [fl for (fl, b) in zip(floors, uob) if (b > 0) && (fl > f)]
+	above_floor_dist = abs(viable_floors_above[1]-f)
+
+	viable_floors_below = [fl for (fl, b) in zip(floors, dob) if (b > 0) && (fl < f)]
+	below_floor_dist = abs(viable_floors_below[1]-f)
+
+	at_current_floor = any([fl for (fl, b) for zip(floors, ob) if b > 0]==f)
+
+	return ApproxDistanceElevatorState(f, ib, above_floor_dist, below_floor_dist, at_current_floor)
+end
+
 animate_this = false
 
 EP  = ElevatorProblem(5, 0.025)
@@ -208,8 +257,5 @@ else
 	end
 end
 
-#ob = map(((u, d),) -> 1*((u == 1) || (d == 1)), collect(zip(uob,dob)))
-#any([fl for (fl, b) for zip(floors, ob) if b > 0].>f)
-#any([fl for (fl, b) for zip(floors, ob) if b > 0].<f)
-#any([fl for (fl, b) for zip(floors, ob) if b > 0]==f)
+
 
