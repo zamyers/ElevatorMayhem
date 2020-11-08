@@ -16,9 +16,9 @@ end
 struct ApproxAboveBelowElevatorState
 	current_floor
 	inner_buttons
-	ob_pressed_above
 	ob_pressed_below
 	ob_at_current_floor
+	ob_pressed_above
 end
 
 struct ApproxDistanceElevatorState
@@ -202,11 +202,11 @@ function ob_abovebelow_project(problem::ElevatorProblem, state::ElevatorState)
 	floors = 1:num_f
 
 	ob = map(((u, d),) -> 1*((u == 1) || (d == 1)), collect(zip(uob,dob)))
-	above = any([fl for (fl, b) for zip(floors, ob) if b > 0].>f)
-	below = any([fl for (fl, b) for zip(floors, ob) if b > 0].<f)
-	at_current_floor = any([fl for (fl, b) for zip(floors, ob) if b > 0]==f)
+	above = any([fl for (fl, b) in zip(floors, ob) if b > 0].>f) #didn't run for for (fl,b) for zip(floors,ob)
+	below = any([fl for (fl, b) in zip(floors, ob) if b > 0].<f)
+	at_current_floor = any([fl for (fl, b) in zip(floors, ob) if b > 0].==f)
 
-	return ApproxAboveBelowElevatorState(f, ib, above, below, at_current_floor)
+	return ApproxAboveBelowElevatorState(f, ib, below, at_current_floor, above)
 end
 
 function ob_distance_project(problem::ElevatorProblem, state::ElevatorState)
@@ -223,7 +223,7 @@ function ob_distance_project(problem::ElevatorProblem, state::ElevatorState)
 	viable_floors_below = [fl for (fl, b) in zip(floors, dob) if (b > 0) && (fl < f)]
 	below_floor_dist = abs(viable_floors_below[1]-f)
 
-	at_current_floor = any([fl for (fl, b) for zip(floors, ob) if b > 0]==f)
+	at_current_floor = any([fl for (fl, b) in zip(floors, ob) if b > 0]==f)
 
 	return ApproxDistanceElevatorState(f, ib, above_floor_dist, below_floor_dist, at_current_floor)
 end
@@ -250,12 +250,41 @@ else
 		global elv, r = elevator_simulator(EP, elv, a)
 		global a, d = shortest_distance_heuristic(EP, elv, d)
 		global tot_r += r
-		println("cycle: ", ii)
-		println("--------------------------")
-		println("action: ", a+2, "\nstate: ", elv, "\nreward: ", r)
-		println("--------------------------")
+		#println("cycle: ", ii)
+		#println("--------------------------")
+		#println("action: ", a+2, "\nstate: ", elv, "\nreward: ", r)
+		#println("--------------------------")
 	end
 end
 
+
+Q_learning = true
+
+if Q_learning
+	Q_current = zeros(5,3)
+	α = 0.2
+	γ = 0.95
+	for ii in 1:10000
+		global elv, r = elevator_simulator(EP, elv, a)
+		#global a, d = shortest_distance_heuristic(EP, elv, d)
+		global elv_approx = ob_abovebelow_project(EP, elv)
+		#println(findall(x->x==1, [1, 0, 0, 0, 10]))
+		global elv_state = [elv_approx.ob_pressed_below, elv_approx.ob_at_current_floor , elv_approx.ob_pressed_above]
+		if any(elv_state)
+			s_prime = findmax(elv_state)[1] - 2
+
+			global Q_max = maximum(Q_current[elv_approx.current_floor + s_prime , :]) 
+			global Q_current[elv_approx.current_floor, a+2] = Q_current[elv_approx.current_floor, a+2] + α*(r + γ*Q_max - Q_current[elv_approx.current_floor, a+2])
+			 #is determining the next a part of the exploration? can i just do that randomly 
+			global tot_r += r
+		else 
+			println("something is wrong")
+		end 
+		global a = rand(1:3)
+	end
+end
+
+
+println(Q_current)
 
 
