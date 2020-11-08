@@ -17,8 +17,8 @@ struct ApproxAboveBelowElevatorState
 	current_floor
 	inner_buttons
 	ob_pressed_above
-	ob_pressed_below
 	ob_at_current_floor
+	ob_pressed_below
 end
 
 struct ApproxDistanceElevatorState
@@ -202,11 +202,11 @@ function ob_abovebelow_project(problem::ElevatorProblem, state::ElevatorState)
 	floors = 1:num_f
 
 	ob = map(((u, d),) -> 1*((u == 1) || (d == 1)), collect(zip(uob,dob)))
-	above = any([fl for (fl, b) for zip(floors, ob) if b > 0].>f)
-	below = any([fl for (fl, b) for zip(floors, ob) if b > 0].<f)
-	at_current_floor = any([fl for (fl, b) for zip(floors, ob) if b > 0]==f)
+	above = any([fl for (fl, b) in zip(floors, ob) if b > 0].>f)*1.0
+	below = any([fl for (fl, b) in zip(floors, ob) if b > 0].<f)*1.0
+	at_current_floor = any([fl for (fl, b) in zip(floors, ob) if b > 0].==f)*1.0
 
-	return ApproxAboveBelowElevatorState(f, ib, above, below, at_current_floor)
+	return ApproxAboveBelowElevatorState(f, ib, above, at_current_floor, below)
 end
 
 function ob_distance_project(problem::ElevatorProblem, state::ElevatorState)
@@ -217,20 +217,30 @@ function ob_distance_project(problem::ElevatorProblem, state::ElevatorState)
 
 	ob = map(((u, d),) -> 1*((u == 1) || (d == 1)), collect(zip(uob,dob)))
 
-	viable_floors_above = [fl for (fl, b) in zip(floors, uob) if (b > 0) && (fl > f)]
-	above_floor_dist = abs(viable_floors_above[1]-f)
+	viable_floors_above = [fl for (fl, b) in zip(floors, ob) if (b > 0) && (fl > f)]
+	if length(viable_floors_above) > 0
+		above_floor_dist = abs(viable_floors_above[1]-f)
+	else
+		above_floor_dist = 0
+	end
 
-	viable_floors_below = [fl for (fl, b) in zip(floors, dob) if (b > 0) && (fl < f)]
-	below_floor_dist = abs(viable_floors_below[1]-f)
+	viable_floors_below = [fl for (fl, b) in zip(floors, ob) if (b > 0) && (fl < f)]
+	if length(viable_floors_below) > 0
+		below_floor_dist = abs(viable_floors_below[1]-f)
+	else
+		below_floor_dist = 0
+	end
 
-	at_current_floor = any([fl for (fl, b) for zip(floors, ob) if b > 0]==f)
+	at_current_floor = any([fl for (fl, b) in zip(floors, ob) if b > 0]==f)*1.0
 
 	return ApproxDistanceElevatorState(f, ib, above_floor_dist, below_floor_dist, at_current_floor)
 end
 
 animate_this = false
 
-EP  = ElevatorProblem(5, 0.025)
+num_f = 5
+
+EP  = ElevatorProblem(num_f, 0.025)
 elv = ElevatorState(EP)
 a   = 0
 d   = 0
@@ -246,10 +256,21 @@ if animate_this
 	end 
 	gif(anim, "test.gif", fps=3)
 else
+	convert_state = LinearIndices((num_f, 2^(num_f), 2, 2, 2))
 	for ii in 1:1000
 		global elv, r = elevator_simulator(EP, elv, a)
+		println(elv)
+		println(ob_distance_project(EP, elv))
 		global a, d = shortest_distance_heuristic(EP, elv, d)
 		global tot_r += r
+
+		approx_elv = ob_abovebelow_project(EP, elv)
+		f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
+		ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+
+		println(approx_elv)
+		println(convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)])
+
 		println("cycle: ", ii)
 		println("--------------------------")
 		println("action: ", a+2, "\nstate: ", elv, "\nreward: ", r)
