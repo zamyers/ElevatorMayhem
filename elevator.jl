@@ -1,4 +1,5 @@
 using Plots
+using DataStructures
 default(show=true)
 
 struct ElevatorProblem
@@ -81,6 +82,97 @@ function elevator_simulator(problem::ElevatorProblem, state::ElevatorState, acti
 
 	return ElevatorState(f, ib, uob, dob), r
 end
+
+
+
+
+function first_come_first_serve_heuristic(problem::ElevatorProblem, state::ElevatorState, destination, inner_queue, outer_queue)
+	num_f, prob_obp = problem.number_of_floors, problem.outer_button_press_probability
+	f, ib, uob, dob = state.current_floor, state.inner_buttons, state.up_outer_buttons, state.down_outer_buttons
+	d = destination
+	floors = 1:num_f
+
+	#Combine both outer up and down buttons into a single outer button vector
+	ob = map(((u, d),) -> 1*((u == 1) || (d == 1)), collect(zip(uob,dob)))
+
+	new_ib_q = Queue{Int}()
+	for node in inner_queue
+		if ib[node] == 1
+			enqueue!(new_ib_q, node)
+		end 
+	end 
+
+	for fl in floors 
+		if (ib[fl] == 1) && !(fl in new_ib_q)
+			enqueue!(new_ib_q, fl)
+		end 
+	end 
+
+	inner_queue = deepcopy(new_ib_q)
+
+	new_ob_q = Queue{Int}() 
+	for node in outer_queue
+		if ob[node] == 1
+			enqueue!(new_ob_q, node)
+		end 
+	end 
+
+	for fl in floors 
+		if (ob[fl] == 1) && !(fl in new_ob_q)
+			enqueue!(new_ob_q, fl)
+		end 
+	end 
+	outer_queue = deepcopy(new_ob_q)
+	
+	if f==d 	#If you are on the floor that is your destination, stop and let that person out
+		d = 0
+		return 0, 0, inner_queue, outer_queue 
+	end 
+	#If the floor you are on, currently has an inner button pressed, then you should stop and let that person out
+
+
+
+
+	#If there are no buttons pressed, just wait at your current floor
+	if !(length(inner_queue) > 0) && !(length(outer_queue)>0)
+		a = 0
+		d = 0
+		return a, d, inner_queue, outer_queue
+	end
+
+	#If you don't have a destination, first check if any of the internal buttons are pressed and go to the closest floor
+	#If no internal buttons are pressed, check if any external buttons are pressed and go to the closest floor
+	#Otherwise, generally head towards destination, picking up people who are also heading to destination
+	if d==0
+		if length(inner_queue)>0
+			d = first(inner_queue)
+		else
+			d = first(outer_queue)
+		end
+		a = (d > f)*2 - 1
+	else	
+		if f in inner_queue 
+			a = 0 
+		elseif d > f
+			if uob[f] == 1
+				a = 0
+			else
+				a = 1
+			end
+		else 
+			d < f
+			if dob[f] == 1
+				a = 0
+			else 
+				a = -1
+			end
+		end
+	end
+
+
+	return a, d, inner_queue, outer_queue
+end
+
 
 function shortest_distance_heuristic(problem::ElevatorProblem, state::ElevatorState, destination)
 	num_f, prob_obp = problem.number_of_floors, problem.outer_button_press_probability
@@ -243,10 +335,12 @@ Q_learning = false
 
 num_f = 5
 
-EP  = ElevatorProblem(num_f, 0.025)
+EP  = ElevatorProblem(num_f, 0.050)
 elv = ElevatorState(EP)
 a   = 0
 d   = 0
+inner_queue = Queue{Int}()
+outer_queue = Queue{Int}()
 tot_r = 0
 
 
@@ -272,8 +366,15 @@ else
 		global elv, r = elevator_simulator(EP, elv, a)
 		#println(elv)
 		#println(ob_distance_project(EP, elv))
-		global a, d = shortest_distance_heuristic(EP, elv, d)
+		#global a, d = shortest_distance_heuristic(EP, elv, d)
+		global a, d, inner_queue, outer_queue = first_come_first_serve_heuristic(EP, elv, d, inner_queue, outer_queue)
 		global tot_r += r
+		#println("inner_queue", " ", inner_queue)
+		#println("outer_queue", " ", outer_queue)
+		#println("action", " ", a)
+		#println("destination", " ", d)
+		#println("floor", " ", elv.current_floor)
+		#readline()
 
 		approx_elv = ob_abovebelow_project(EP, elv)
 		f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
