@@ -25,9 +25,9 @@ end
 struct ApproxDistanceElevatorState
 	current_floor
 	inner_buttons
-	above_dist
 	below_dist
-	ob_at_current_floor
+	at_current_floor
+	above_dist
 end
 
 function circle(x, y, r)
@@ -317,17 +317,16 @@ function ob_distance_project(problem::ElevatorProblem, state::ElevatorState)
 	else
 		above_floor_dist = 0
 	end
-
 	viable_floors_below = [fl for (fl, b) in zip(floors, ob) if (b > 0) && (fl < f)]
 	if length(viable_floors_below) > 0
-		below_floor_dist = abs(viable_floors_below[1]-f)
+		below_floor_dist = abs(viable_floors_below[end]-f)
 	else
 		below_floor_dist = 0
 	end
 
 	at_current_floor = any([fl for (fl, b) in zip(floors, ob) if b > 0]==f)*1.0
 
-	return ApproxDistanceElevatorState(f, ib, above_floor_dist, below_floor_dist, at_current_floor)
+	return ApproxDistanceElevatorState(f, ib, below_floor_dist, at_current_floor, above_floor_dist)
 end
 
 animate_this = false
@@ -335,64 +334,64 @@ Q_learning = false
 
 num_f = 5
 
-EP  = ElevatorProblem(num_f, 0.050)
+EP  = ElevatorProblem(num_f, 0.05)
 elv = ElevatorState(EP)
 a   = 0
 d   = 0
 inner_queue = Queue{Int}()
 outer_queue = Queue{Int}()
 tot_r = 0
-
+	#Approx Distance
+	#convert_state = LinearIndices((num_f, 2^(num_f), num_f, 2, num_f))
+	#state_dimension = convert_state[num_f, 2^(num_f), num_f, 2,num_f]
+		#Approx Up Down
+convert_state = LinearIndices((num_f, 2^(num_f), 2, 2, 2))
+state_dimension = convert_state[num_f, 2^(num_f), 2, 2,2]
+Q_current = zeros(state_dimension,3)
 
 α = 0.35
-γ = 0.65
+γ = 0.7
 prev_a = 0
 prev_s = 1
 
-if animate_this
+if animate_this && !Q_learning
 	anim = @animate for ii in 1:100
 		global elv, r = elevator_simulator(EP, elv, a)
-		global a, d = shortest_distance_heuristic(EP, elv, d)
+		global a, d, inner_queue, outer_queue = first_come_first_serve_heuristic(EP, elv, d, inner_queue, outer_queue)
+		#global a, d = shortest_distance_heuristic(EP, elv, d)
 		global tot_r += r
 		println(a, " ", d, " ", elv, " ", tot_r, " ", r)
 		plot_elevator_state(EP, elv, d, a)
 	end 
 	gif(anim, "test.gif", fps=3)
 else
-	convert_state = LinearIndices((num_f, 2^(num_f), 2, 2, 2))
-	state_dimension = convert_state[num_f, 2^(num_f), 2, 2,2]
-	Q_current = zeros(state_dimension,3)
 	for ii in 1:500000
 		global elv, r = elevator_simulator(EP, elv, a)
-		#println(elv)
-		#println(ob_distance_project(EP, elv))
 		#global a, d = shortest_distance_heuristic(EP, elv, d)
 		global a, d, inner_queue, outer_queue = first_come_first_serve_heuristic(EP, elv, d, inner_queue, outer_queue)
 		global tot_r += r
-		#println("inner_queue", " ", inner_queue)
-		#println("outer_queue", " ", outer_queue)
-		#println("action", " ", a)
-		#println("destination", " ", d)
-		#println("floor", " ", elv.current_floor)
-		#readline()
 
-		approx_elv = ob_abovebelow_project(EP, elv)
-		f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
-		ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+		if Q_learning 
+			approx_elv = ob_abovebelow_project(EP, elv)
+			f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
+			ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
 
-		s = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
+			#approx_elv = ob_distance_project(EP, elv)
+			#f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons,	approx_elv.above_dist, approx_elv.at_current_floor, approx_elv.below_dist
+			#ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+
+			s = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
 
 		#println(prev_s, " ", prev_a, " ",  r, " ", s)
 
-		if Q_learning 
 			global Q_max = maximum(Q_current[s, :]) 
 			global Q_current[prev_s, prev_a+2] = Q_current[prev_s, prev_a+2] + α*(r + γ*Q_max - Q_current[prev_s, prev_a+2])
 			 #is determining the next a part of the exploration? can i just do that randomly 
-			global tot_r += r
+			global prev_a = a
+			global prev_s = s
 		end
 
-		global prev_a = a
-		global prev_s = s
+
 		#println(approx_elv)
 		#println(convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)])
 
@@ -402,12 +401,16 @@ else
 		#println("--------------------------")
 	end
 	println("Final Score: ", tot_r)
-	for ii in 1:500000
+	for ii in 1:1500000
 		global elv, r = elevator_simulator(EP, elv, a)
 		global a = rand(1:3) - 2
 		approx_elv = ob_abovebelow_project(EP, elv)
 		f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
 		ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+
+		#approx_elv = ob_distance_project(EP, elv)
+		#f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons,	approx_elv.above_dist, approx_elv.at_current_floor, approx_elv.below_dist
+		#ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
 
 		s = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
 
@@ -425,9 +428,9 @@ else
 	end
 end
 
-#println(Q_current)
-#Q_prev = deepcopy(Q_current)
-#readline()
+println(Q_current)
+Q_prev = deepcopy(Q_current)
+readline()
 
 println("Final Score: ", tot_r)
 elv = ElevatorState(EP)
@@ -444,11 +447,15 @@ if Q_learning
 			approx_elv = ob_abovebelow_project(EP, elv)
 			f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
 			ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+			
+			#approx_elv = ob_distance_project(EP, elv)
+			#f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons,	approx_elv.above_dist, approx_elv.at_current_floor, approx_elv.below_dist
+			#ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
 
 			s = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
 
 			global a = argmax(Q_current[s, :]) - 2
-			if f_repeats > 10
+			if f_repeats > 3
 				global a = rand(1:3) - 2
 				global use_Q = false
 				global d = 0
@@ -459,9 +466,13 @@ if Q_learning
 			f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
 			ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
 
+			#approx_elv = ob_distance_project(EP, elv)
+			#f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons,	approx_elv.above_dist, approx_elv.at_current_floor, approx_elv.below_dist
+			#ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+
 			sp = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
 
-			if f_repeats > 10
+			if f_repeats > 3
 				global Q_max = maximum(Q_current[sp, :]) 
 				global Q_current[s, a+2] = Q_current[s, a+2] + α*(r + γ*Q_max - Q_current[s, a+2])
 			end
@@ -492,6 +503,68 @@ if Q_learning
 	println(sum(cheating)/1000000)
 end
 #println(Q_current -Q_prev)
+if Q_learning && animate_this
+	elv = ElevatorState(EP)
+	tot_r = 0
+	prev_f = 1
+	f_repeats = 0
+	use_Q = true
+	anim = @animate for ii in 1:100
+		if use_Q
+			approx_elv = ob_abovebelow_project(EP, elv)
+			f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
+			ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+			
+			#approx_elv = ob_distance_project(EP, elv)
+			#f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons,	approx_elv.above_dist, approx_elv.at_current_floor, approx_elv.below_dist
+			#ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
 
+			s = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
 
+			global a = argmax(Q_current[s, :]) - 2
+			if f_repeats > 3
+				global a = rand(1:3) - 2
+				global use_Q = false
+				global d = 0
+			end
+			global elv, r = elevator_simulator(EP, elv, a)
+
+			approx_elv = ob_abovebelow_project(EP, elv)
+			f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
+			ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+
+			#approx_elv = ob_distance_project(EP, elv)
+			#f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons,	approx_elv.above_dist, approx_elv.at_current_floor, approx_elv.below_dist
+			#ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+
+			sp = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
+
+			if f_repeats > 3
+				global Q_max = maximum(Q_current[sp, :]) 
+				global Q_current[s, a+2] = Q_current[s, a+2] + α*(r + γ*Q_max - Q_current[s, a+2])
+			end
+			global tot_r +=r
+			#println("cycle: ", ii)
+			#println("--------------------------")
+			#println("action: ", a+2, "\nstate: ", elv, "\nreward: ", r)
+			#println("--------------------------")
+			if f == prev_f
+				global f_repeats += 1
+			else
+				global f_repeats = 0
+			end
+			global prev_f = f
+		else
+			global elv, r = elevator_simulator(EP, elv, a)
+			global a, d = shortest_distance_heuristic(EP, elv, d)
+			global tot_r += r
+			global f_repeats = f_repeats - 1
+			if f_repeats <= 1 #Some weird issue with how globals are updated!
+				global use_Q = true
+			end
+		end
+		plot_elevator_state(EP, elv, 0, a)
+	end 
+	gif(anim, "test.gif", fps=3)
+end
 
