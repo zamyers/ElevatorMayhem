@@ -91,15 +91,16 @@ function shortest_distance_heuristic(problem::ElevatorProblem, state::ElevatorSt
 	#Combine both outer up and down buttons into a single outer button vector
 	ob = map(((u, d),) -> 1*((u == 1) || (d == 1)), collect(zip(uob,dob)))
 	
-	#If the floor you are on, currently has an inner button pressed, then you should stop and let that person out
-	if f in filter(((fl, b),) ->(b==1), collect(zip(floors, ib)))
-		return 0, d
-	end
+#	#If the floor you are on, currently has an inner button pressed, then you should stop and let that person out
+#	if f in [fl for (fl, b) in zip(floors, ib) if b > 0]
+#		if f == d
+#			d = 0 
+#		end
+#		return 0, d
+#	end
 
-	#If you are on the floor that is your destination, stop and let that person out
 	if f==d
-		d = 0
-		return 0, d
+		return 0, 0
 	end
 
 	#If there are no buttons pressed, just wait at your current floor
@@ -121,15 +122,16 @@ function shortest_distance_heuristic(problem::ElevatorProblem, state::ElevatorSt
 			d = viable_floors[argmin(abs.(viable_floors.-f))]
 		end
 		a = (d > f)*2 - 1
-	else	
-		if d > f
+	else
+		if f in [fl for (fl, b) in zip(floors, ib) if b > 0]
+			a = 0
+		elseif d > f
 			if uob[f] == 1
 				a = 0
 			else
 				a = 1
 			end
 		else 
-			d < f
 			if dob[f] == 1
 				a = 0
 			else 
@@ -237,7 +239,7 @@ function ob_distance_project(problem::ElevatorProblem, state::ElevatorState)
 end
 
 animate_this = false
-Q_learning = true
+Q_learning = false
 
 num_f = 5
 
@@ -248,8 +250,8 @@ d   = 0
 tot_r = 0
 
 
-α = 0.2
-γ = 0.95
+α = 0.35
+γ = 0.65
 prev_a = 0
 prev_s = 1
 
@@ -298,7 +300,7 @@ else
 		#println("action: ", a+2, "\nstate: ", elv, "\nreward: ", r)
 		#println("--------------------------")
 	end
-
+	println("Final Score: ", tot_r)
 	for ii in 1:500000
 		global elv, r = elevator_simulator(EP, elv, a)
 		global a = rand(1:3) - 2
@@ -314,61 +316,81 @@ else
 			global Q_max = maximum(Q_current[s, :]) 
 			global Q_current[prev_s, prev_a+2] = Q_current[prev_s, prev_a+2] + α*(r + γ*Q_max - Q_current[prev_s, prev_a+2])
 			 #is determining the next a part of the exploration? can i just do that randomly 
-			global tot_r += r
 		end
+		global tot_r += r
 
 		global prev_a = a
 		global prev_s = s
 	end
 end
 
-println(Q_current)
-Q_prev = deepcopy(Q_current)
-readline()
+#println(Q_current)
+#Q_prev = deepcopy(Q_current)
+#readline()
 
 println("Final Score: ", tot_r)
 elv = ElevatorState(EP)
 tot_r = 0
 prev_f = 1
-f_repeats = 0 
+f_repeats = 0
+use_Q = true
+
+cheating = zeros((1000000), 1)
+
 if Q_learning
-	for ii in 1:500000
-		approx_elv = ob_abovebelow_project(EP, elv)
-		f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
-		ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+	for ii in 1:1000000
+		if use_Q
+			approx_elv = ob_abovebelow_project(EP, elv)
+			f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
+			ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
 
-		s = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
+			s = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
 
-		global a = argmax(Q_current[s, :]) - 2
-		if f_repeats > 10
-			global a = rand(1:3) - 2
-		end
-		global elv, r = elevator_simulator(EP, elv, a)
+			global a = argmax(Q_current[s, :]) - 2
+			if f_repeats > 10
+				global a = rand(1:3) - 2
+				global use_Q = false
+				global d = 0
+			end
+			global elv, r = elevator_simulator(EP, elv, a)
 
-		approx_elv = ob_abovebelow_project(EP, elv)
-		f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
-		ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
+			approx_elv = ob_abovebelow_project(EP, elv)
+			f, ib, ab, at, bl = approx_elv.current_floor, approx_elv.inner_buttons, approx_elv.ob_pressed_above, approx_elv.ob_at_current_floor, approx_elv.ob_pressed_below
+			ib_int = sum([Int(2^(i-1) * b) for (i, b) in zip(1:num_f, ib)])
 
-		sp = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
+			sp = convert_state[f, ib_int + 1, Int(ab+1), Int(at+1), Int(bl+1)]
 
-		if f_repeats > 10
-			global Q_max = maximum(Q_current[sp, :]) 
-			global Q_current[s, a+2] = Q_current[s, a+2] + α*(r + γ*Q_max - Q_current[s, a+2])
-		end
-		global tot_r +=r
-		#println("cycle: ", ii)
-		#println("--------------------------")
-		#println("action: ", a+2, "\nstate: ", elv, "\nreward: ", r)
-		#println("--------------------------")
-		if f == prev_f
-			global f_repeats += 1
+			if f_repeats > 10
+				global Q_max = maximum(Q_current[sp, :]) 
+				global Q_current[s, a+2] = Q_current[s, a+2] + α*(r + γ*Q_max - Q_current[s, a+2])
+			end
+			global tot_r +=r
+			#println("cycle: ", ii)
+			#println("--------------------------")
+			#println("action: ", a+2, "\nstate: ", elv, "\nreward: ", r)
+			#println("--------------------------")
+			if f == prev_f
+				global f_repeats += 1
+			else
+				global f_repeats = 0
+			end
+			global prev_f = f
+			global cheating[ii] = 0
 		else
-			global f_repeats = 0
+			global elv, r = elevator_simulator(EP, elv, a)
+			global a, d = shortest_distance_heuristic(EP, elv, d)
+			global tot_r += r
+			global f_repeats = f_repeats - 1
+			if f_repeats <= 1 #Some weird issue with how globals are updated!
+				global use_Q = true
+			end
+			global cheating[ii] = 1
 		end
-		global prev_f = f
 	end
-	println(tot_r)
+	println("Final Score: ", tot_r)
+	println(sum(cheating)/1000000)
 end
-println(Q_current -Q_prev)
+#println(Q_current -Q_prev)
+
 
 
